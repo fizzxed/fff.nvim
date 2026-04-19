@@ -37,10 +37,6 @@ pub struct BackgroundWatcher {
 
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_PATHS_THRESHOLD: usize = 1024;
-/// On macOS, each `watch()` call creates a separate FSEventStream. When the
-/// number of directories exceeds this threshold we fall back to a single
-/// recursive watch to avoid exhausting the per-process stream limit.
-const MAX_MACOS_NONRECURSIVE_WATCHES: usize = 4096;
 /// Minimum seconds between frecency tracks of the same file in AI mode.
 /// Prevents score inflation from rapid burst edits by AI agents.
 const AI_MODE_COOLDOWN_SECS: u64 = 5 * 60;
@@ -148,8 +144,7 @@ impl BackgroundWatcher {
 
         // Decide the watching strategy up-front so the event handler closure
         // knows whether it needs to request dynamic directory watches.
-        let use_recursive =
-            cfg!(target_os = "macos") && watch_dirs.len() > MAX_MACOS_NONRECURSIVE_WATCHES;
+        let use_recursive = cfg!(target_os = "macos");
 
         let git_workdir_for_handler = git_workdir.clone();
         let mut debouncer = new_debouncer_opt(
@@ -195,14 +190,12 @@ impl BackgroundWatcher {
         // (NonRecursive). This avoids receiving events for gitignored paths like
         // node_modules/ and keeps the event volume low.
         //
-        // On macOS, each `watch()` call creates a separate FSEventStream. Large
-        // repos (e.g. Chromium with 487K+ files) can have tens of thousands of
-        // directories, which exhausts the per-process FSEvents stream limit and
-        // causes "unable to start FSEvent stream" errors. When the directory
-        // count exceeds the threshold we fall back to a single Recursive watch
-        // on the base path. FSEvents handles this efficiently with one kernel
-        // stream for the entire subtree. Gitignored paths are already filtered
-        // in the event handler via `should_include_file()`.
+        // On macOS, each `watch()` call creates a separate FSEventStream, and
+        // per-dir NonRecursive rebuilds the stream on every call (O(N²)) while
+        // leaking DIR fds on the ancestor chain. We always use a single Recursive
+        // watch on the base path — FSEvents covers the subtree with one kernel
+        // stream. Gitignored paths are filtered in the event handler via
+        // `should_include_file()`.
         //
         // On Linux (inotify), RecursiveMode::Recursive creates one kernel watch
         // per subdirectory *including* gitignored ones, wasting file descriptors.
@@ -214,11 +207,8 @@ impl BackgroundWatcher {
         if use_recursive {
             debouncer.watch(base_path.as_path(), RecursiveMode::Recursive)?;
             info!(
-                "File watcher initialized with single recursive watch on {} \
-                 ({} directories exceeded threshold of {})",
+                "File watcher initialized with single recursive watch on {}",
                 base_path.display(),
-                watch_dirs.len(),
-                MAX_MACOS_NONRECURSIVE_WATCHES,
             );
         } else {
             debouncer.watch(base_path.as_path(), RecursiveMode::NonRecursive)?;
