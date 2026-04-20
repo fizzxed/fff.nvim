@@ -223,7 +223,7 @@ function M.build_binary(callback)
     return
   end
 
-  vim.system({ 'cargo', 'build', '--release' }, { cwd = plugin_dir }, function(result)
+  vim.system({ 'cargo', 'build', '--release', '--features', 'zlob' }, { cwd = plugin_dir }, function(result)
     if result.code ~= 0 then
       callback(false, 'Failed to build rust binary: ' .. (result.stderr or 'unknown error'))
       return
@@ -245,7 +245,7 @@ function M.download_or_build_binary()
     vim.schedule(
       function()
         vim.notify(
-          'Error downloading binary: ' .. (download_error or 'unknown error') .. '\nTrying cargo build --release\n',
+          'Error downloading binary: ' .. (download_error or 'unknown error') .. '\nTrying cargo build --release --features zlob\n',
           vim.log.levels.WARN
         )
       end

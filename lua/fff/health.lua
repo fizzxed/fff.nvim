@@ -353,7 +353,7 @@ function M.check()
     vim.health.info('To install the binary, run:')
     vim.health.info('  :lua require("fff.download").download_or_build_binary()')
     vim.health.info('Or build from source with:')
-    vim.health.info('  cargo build --release')
+    vim.health.info('  cargo build --release --features zlob')
   end
 end
 
